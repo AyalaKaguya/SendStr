@@ -2,7 +2,8 @@ use clap::Parser;
 use std::io::prelude::*;
 use std::net::TcpListener;
 
-/// 启动一个临时的http服务器并发送一次字符串。
+/// 启动一个临时的http服务器并发送一次字符串，
+/// 当接收到POST请求时将会输出Content。
 #[derive(Parser)]
 struct Cli {
     /// 服务指定的端口号
@@ -11,32 +12,35 @@ struct Cli {
     str: String,
 }
 
-#[macro_use] extern crate lazy_static;
-lazy_static! {
-  static ref ARGS: Cli = Cli::parse();
-}
-
-const CRLF: &str = "\r\n";
 fn main() {
-    let listener = TcpListener::bind(format!("127.0.0.1:{}", ARGS.port)).unwrap();
+    let args = Cli::parse();
+    let listener = TcpListener::bind(format!("127.0.0.1:{}", args.port)).unwrap();
     for stream in listener.incoming() {
         let mut stream = stream.unwrap();
-        let mut buffer= [0; 4096];
+        let mut buffer = [0; 4096];
         stream.read(&mut buffer).unwrap();
-    
-        let contents = &ARGS.str;
-        let status = format!("HTTP/1.1 200 OK{}", CRLF);
-        let content_type = format!("Content-Type: text/html;charset=utf-8{}", CRLF);
-        let server = format!("Server: SendStr{}", CRLF);
-        let content_length = format!("Content-Length: {}{}", contents.as_bytes().len(), CRLF);
+
+        let req = String::from_utf8_lossy(&buffer);
+        for st in req.split("\r\n\r\n") {
+            if st.starts_with("GET") {
+                break;
+            }
+            if !st.starts_with("POST") {
+                println!("{}", st.trim())
+            }
+        }
+
+        let contents = &args.str;
+        let status = "HTTP/1.1 200 OK\r\n";
+        let content_type = "Content-Type: text/html;charset=utf-8\r\n";
+        let server = "Server: SendStr\r\n";
+        let content_length = format!("Content-Length: {}\r\n", contents.as_bytes().len());
         let response = format!(
-            "{0}{1}{2}{3}{4}{5}",
-            status, server, content_type, content_length, CRLF, contents
+            "{0}{1}{2}{3}\r\n{4}",
+            status, server, content_type, content_length, contents
         );
-    
         stream.write(response.as_bytes()).unwrap();
         stream.flush().unwrap();
-
         break;
     }
 }
